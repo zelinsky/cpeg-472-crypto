@@ -2,44 +2,62 @@
 
 from Crypto.Cipher import AES
 import urllib2
-from itertools import cycle, izip
+from itertools import cycle, izip, product
+import string
 
 def XOR(message, key):
     return ''.join(chr(ord(c)^ord(k)) for c,k in izip(message, cycle(key)))
     
-hc = ['a','b','c','d','e','f','0','1','2','3','4','5','6','7','8','9']
+hexdigits = string.hexdigits[:-6]
 
-r = urllib2.urlopen('http://ctf2.gel.webfactional.com/p4/encrypt').read()
+# Get the AES CTR encrypted password and IV
+response = urllib2.urlopen('http://ctf2.gel.webfactional.com/p4/encrypt').read()
+iv = response[0:32]
+enc_pass = response[32:].decode('hex') # 16 bytes
 
-iv = r[0:32]
-enc = r[32:].decode('hex')
 
-for i in range(0, len(enc)):
-    my_enc = enc[:i] + XOR('a', enc[i]) + enc[i+1:]
+# Find the (length of) the padding for the password
+# Iterate through encrypted password byte by byte, changing the byte, and then trying to decrypt
+# If a padding error is received, we know we changed the first byte of the padding
+for i in range(0, len(enc_pass)):
+    my_enc = enc_pass[:i] + XOR('a', enc_pass[i]) + enc_pass[i+1:]
     try:
         urllib2.urlopen('http://ctf2.gel.webfactional.com/p4/decrypt/'+my_enc.encode('hex')+'/'+iv).read()
     except:
-        pad = len(enc) - i
+        pad = len(enc_pass) - i
         break
-    
-f = chr(pad) * pad
-k = XOR(enc[-pad:], f)
 
-def bf(n):
+# Xor the padding in the encrypted password with the plaintext padding to get the output of the AES CTR, we'll call this k
+padding = chr(pad) * pad
+k = XOR(enc_pass[-pad:], padding)
+
+# Brute force the n'th byte (starting from the end) of the encrypted password
+def brute_force(n):
     global k
-    for h1 in hc:
-        for h2 in hc:
-            my_enc = enc[:16-n]+(h1+h2).decode('hex')+XOR(chr(n)*(n-1), k)
-            try:
-                urllib2.urlopen('http://ctf2.gel.webfactional.com/p4/decrypt/'+my_enc.encode('hex')+'/'+iv).read()
-                k = XOR((h1+h2).decode('hex'), chr(i))+k
-                return
-            except:
-                pass
-            
-for i in range(pad+1, 17):
-    bf(i)
+    # Loop through possible byte values
+    for h in map(''.join, product(hexdigits, repeat=2)):
 
-password = XOR(enc, k)[:-pad]
+        # The encrypted padding for finding the n'th byte, will decrypt to correct padding
+        enc_padding = XOR(chr(n)*(n-1), k)
+
+        # Guess what the encrypted first byte of the padding is
+        my_enc = enc_pass[:16-n]+(h).decode('hex')+enc_padding
+
+        # If it decrypts successfully, our guess was correct
+        try:
+            urllib2.urlopen('http://ctf2.gel.webfactional.com/p4/decrypt/'+my_enc.encode('hex')+'/'+iv).read()
+
+            # Success, we found the next byte of k
+            k = XOR((h).decode('hex'), chr(n))+k
+            return
+        except:
+            pass
+
+# Brute force the rest of the password
+for i in range(pad+1, 17):
+    brute_force(i)
+password = XOR(enc_pass, k)[:-pad]
+
+# We can get the flag now that we have the password
 flag = urllib2.urlopen('http://ctf2.gel.webfactional.com/p4/flag/'+password).read()
 print flag

@@ -2,34 +2,46 @@
 
 from Crypto.Cipher import AES
 import urllib2
-    
-hc = ['a','b','c','d','e','f','0','1','2','3','4','5','6','7','8','9']
+import string
+import itertools
+
+
+hexdigits = string.hexdigits[:-6]
 flag1 = ''
 flag2 = ''
 
-def bf(block, suf, f):
-    for h1 in hc:
-        for h2 in hc:
-            g = h1+h2+f+suf
-            e =  urllib2.urlopen('http://ctf2.gel.webfactional.com/p2/encrypt/'+g).read()
-            if (e[:32] == block):
-                f=h1+h2+f
-                #print f
-                return f
- 
+
+def brute_force_byte(block, padding, f):
+
+    # Loop through hex values
+    for h in map(''.join, itertools.product(hexdigits, repeat=2)):
+        print h
+        g = h+f+padding
+        e =  urllib2.urlopen('http://ctf2.gel.webfactional.com/p2/encrypt/'+g).read()
+        if (e[:32] == block):
+            f=h+f
+            return f
+
+# Loop through the last 16 bytes of the flag
 for i in range(15, -1, -1):
     m = 'aa' + flag1
-    b = urllib2.urlopen('http://ctf2.gel.webfactional.com/p2/encrypt/'+m).read()[64:96]
-    s = chr(i).encode('hex') * i
-    #print i, m, s
-    flag1 = bf(b, s, flag1)
-    
+
+    # First byte of block3 is the byte we have to brute force, the rest of the block is padding
+    block3 = urllib2.urlopen('http://ctf2.gel.webfactional.com/p2/encrypt/'+m).read()[64:96]
+    padding = chr(i).encode('hex') * i
+    print i, m, padding
+    flag1 = brute_force_byte(block3, padding, flag1)
+
+# Loop through the first 16 bytes of the flag
+# Padding here is actually part of flag1
 for i in range(15, -1, -1):
-    m = 'aa' + flag2 + flag1
-    b = urllib2.urlopen('http://ctf2.gel.webfactional.com/p2/encrypt/'+m).read()[64:96]
-    s = flag1[:i*2]
-    #print i, m, s
-    flag2 = bf(b, s, flag2)
+    m = 'aa' + flag2
+
+    # First byte of block2 has to be brute forced, the rest of the block is part of flag1 we found previously
+    block3 = urllib2.urlopen('http://ctf2.gel.webfactional.com/p2/encrypt/'+m).read()[32:64]
+    padding = flag1[:i*2]
+    print i, m, padding
+    flag2 = brute_force_byte(block3, padding, flag2)
                 
 flag = (flag2+flag1).decode('hex')
 print flag
